@@ -1,0 +1,18 @@
+[package]
+name = "frnsc-amcache"
+version = "0.13.0"
+authors = ["Samuel Garcés Marín <samuel.garces@protonmail.com>"]
+keywords = ["forensic", "windows", "amcache", "registry", "cybersecurity"]
+categories = ["parsing"]
+description = "Pure rust AmCache parser"
+license = "MIT"
+edition = "2021"
+repository = "https://github.com/ForensicRS/frnsc-amcache"
+exclude = ["/artifacts"]
+
+[dependencies]
+forensic-rs = "0.13"
+
+[dev-dependencies]
+frnsc-hive = "0.13"
+#frnsc-hive = {path = "../frnsc-hive-rs"}
