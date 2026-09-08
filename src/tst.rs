@@ -1,33 +1,34 @@
-use std::path::Path;
+use std::sync::Arc;
 
-use forensic_rs::{core::fs::{ChRootFileSystem, StdVirtualFS}, err::ForensicResult, traits::vfs::VirtualFileSystem};
+use forensic_rs::prelude::*;
 use frnsc_hive::reader::{open_hive_with_logs, HiveRegistryReader};
 
-use super::AmCache;
+use super::AmCacheReader;
 
-fn obtain_am_cache() -> AmCache<HiveRegistryReader> {
-    let fs = StdVirtualFS::new().duplicate();
-    let mut fs = ChRootFileSystem::new("./artifacts", fs).duplicate();
-    load_am_cache_from_fs(&mut fs).unwrap()
+fn load_reader() -> HiveRegistryReader {
+    let fs: Arc<dyn FileSystem> = Arc::new(ChRootFileSystem::new("./artifacts/C", Arc::new(StdVirtualFS::new())));
+    let mut reader = HiveRegistryReader::new();
+    let hive_file = open_hive_with_logs(&fs, FPath::new(r"C:\Windows\AppCompat\Programs"), "Amcache.hve").unwrap();
+    reader.add_other("Amcache", hive_file);
+    reader
 }
 
-fn load_am_cache_from_fs(fs : &mut Box<dyn VirtualFileSystem>) -> ForensicResult<AmCache<HiveRegistryReader>>{
-    let mut reader = HiveRegistryReader::new();
-    let hive_file = open_hive_with_logs(fs, Path::new(r"C:\Windows\AppCompat\Programs"), "Amcache.hve").unwrap();
-    reader.add_other("Amcache", hive_file);
-    Ok(AmCache {
-        reader
-    })
+fn obtain_am_cache(reader: HiveRegistryReader) -> AmCacheReader {
+    let root = reader.other_hive_root("Amcache").unwrap();
+    let registry: Arc<dyn Registry> = Arc::new(reader);
+    AmCacheReader::new(registry, root)
 }
 
 #[test]
 fn should_read_amcache() {
-    let _am_cache = obtain_am_cache();
+    let reader = load_reader();
+    let _am_cache = obtain_am_cache(reader);
 }
 
 #[test]
 fn should_iterate_over_shortcuts() {
-    let am_cache = obtain_am_cache();
+    let reader = load_reader();
+    let am_cache = obtain_am_cache(reader);
     for shortcut in am_cache.application_shortcuts().unwrap() {
         println!("{:?}", shortcut);
     }

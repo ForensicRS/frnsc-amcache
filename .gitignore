@@ -1,3 +1,4 @@
 /target
 /artifacts/*.hve
 Cargo.lock
+/.cargo

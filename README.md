@@ -7,64 +7,44 @@ This repository provides a Rust-based tool for parsing and analyzing the AmCache
 
 ### Features
 * Extracts and parses data from the AmCache.hve file.
-* Supports: InventoryApplicationShortcut, InventoryApplication, InventoryApplicationFile, InventoryDeviceContainer, InventoryDriverBinary and InventoryDriverPackage.
+* Supports: InventoryApplicationShortcut, InventoryApplication, InventoryApplicationFile, InventoryDeviceContainer, InventoryDeviceInterface, InventoryDevicePnp, InventoryDeviceUsbHubClass, InventoryDriverBinary and InventoryDriverPackage.
 * Provides structured output for forensic analysis.
 * Fast and efficient parsing using Rust.
-
+* Three ways to consume the data: a direct reader API, a [forensic-rs](https://github.com/ForensicRS/forensic-rs) triage-pipeline parser, and a Bridge/`ProviderHook` integration for interactive, lazily-paginated exploration.
 
 ### Documentation
 
 [Windows Diagnostic Events and Fields](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/privacy/basic-level-windows-diagnostic-events-and-fields-1803#inventory-events)
 
-### To-Do
-- [ ] Take into account different Windows Versions
-- [x] InventoryDriverBinary
-- [x] InventoryApplicationShortcut
-- [x] InventoryApplicationFile
-- [x] InventoryDriverPackage
-- [x] InventoryDeviceContainer
-- [x] InventoryApplication
-- [ ] DeviceCensus
-- [ ] DriverPackageExtended
-- [ ] InventoryApplicationAppV
-- [ ] InventoryApplicationDriver
-- [ ] InventoryApplicationFramework
-- [ ] InventoryDeviceInterface
-- [ ] InventoryDeviceMediaClass
-- [ ] InventoryDevicePnp
-- [ ] InventoryDeviceUsbHubClass
-- [ ] InventoryMiscellaneousMemorySlotArrayInfo
-- [ ] InventoryMiscellaneousOfficeAddIn
-- [ ] InventoryMiscellaneousOfficeAddInUsage
-- [ ] InventoryMiscellaneousOfficeIdentifiers
-- [ ] InventoryMiscellaneousOfficeIESettings
-- [ ] InventoryMiscellaneousOfficeInsights
-- [ ] InventoryMiscellaneousOfficeProducts
-- [ ] InventoryMiscellaneousOfficeSettings
-- [ ] InventoryMiscellaneousOfficeVBA
-- [ ] InventoryMiscellaneousOfficeVBARuleViolations
-- [ ] InventoryMiscellaneousUUPInfo
+### Roadmap
+
+Supported and planned AmCache inventory categories are tracked in [ROADMAP.md](ROADMAP.md). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ### Usage
 
 ```rust
-fn obtain_am_cache() -> AmCache<HiveRegistryReader> {
-    let fs = StdVirtualFS::new().duplicate();
-    let mut fs = ChRootFileSystem::new("./artifacts", fs).duplicate();
-    load_am_cache_from_fs(&mut fs).unwrap()
+use std::sync::Arc;
+use forensic_rs::prelude::*;
+use frnsc_hive::reader::{open_hive_with_logs, HiveRegistryReader};
+use frnsc_amcache::amcache::AmCacheReader;
+
+fn load_reader() -> HiveRegistryReader {
+    let fs: Arc<dyn FileSystem> = Arc::new(ChRootFileSystem::new("./artifacts/C", Arc::new(StdVirtualFS::new())));
+    let mut reader = HiveRegistryReader::new();
+    let hive_file = open_hive_with_logs(&fs, FPath::new(r"C:\Windows\AppCompat\Programs"), "Amcache.hve").unwrap();
+    reader.add_other("Amcache", hive_file);
+    reader
 }
 
-fn load_am_cache_from_fs(fs : &mut Box<dyn VirtualFileSystem>) -> ForensicResult<AmCache<HiveRegistryReader>>{
-    let mut reader = HiveRegistryReader::new();
-    let hive_file = open_hive_with_logs(fs, Path::new(r"C:\Windows\AppCompat\Programs"), "Amcache.hve").unwrap();
-    reader.add_other("Amcache", hive_file);
-    Ok(AmCache {
-        reader
-    })
+fn obtain_am_cache(reader: HiveRegistryReader) -> AmCacheReader {
+    let root = reader.other_hive_root("Amcache").unwrap();
+    let registry: Arc<dyn Registry> = Arc::new(reader);
+    AmCacheReader::new(registry, root)
 }
 
 fn main() {
-    let mut amcache = obtain_am_cache();
+    let reader = load_reader();
+    let am_cache = obtain_am_cache(reader);
     for shortcut in am_cache.application_shortcuts().unwrap() {
         println!("{:?}", shortcut);
     }
@@ -85,6 +65,8 @@ fn main() {
     }
 }
 ```
+
+Sample output (illustrative — `timestamp` is now `Option<ForensicTimestamp>`, which `Debug`-prints differently than the `Filetime` shown below):
 
 ```bash
 InventoryApplicationShortcut { path: "c:\\users\\administrador\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\System Tools\\Administrative Tools.lnk", target_path: "", aum_id: "", program_id: "", timestamp: 04-09-2019 21:19:08.710 }
@@ -119,3 +101,43 @@ InventoryDriverPackage { class_guid: "{4d36e97b-e325-11ce-bfc1-08002be10318}", c
 InventoryDriverPackage { class_guid: "{4d36e97d-e325-11ce-bfc1-08002be10318}", class: "system", directory: "c:\\windows\\system32\\driverstore\\filerepository\\vioser.inf_amd64_80aed074603ea345", date: "2019-4-12", version: "100.77.104.17100", provider: "Red Hat, Inc.", submission_id: "", driver_inbox: 0, inf: "oem6.inf", flight_ids: "", recovery_ids: "", is_active: 0, hwids: "pci\\ven_1af4&dev_1003&subsys_00031af4&rev_00,pci\\ven_1af4&dev_1043&subsys_11001af4&rev_01", sysfile: "vioser.sys\0\0\u{1}", timestamp: 27-10-2019 10:07:21.429 }
 InventoryDriverPackage { class_guid: "{4d36e97b-e325-11ce-bfc1-08002be10318}", class: "scsiadapter", directory: "c:\\windows\\system32\\driverstore\\filerepository\\viostor.inf_amd64_6214303affd5c7dd", date: "2019-4-12", version: "100.77.104.17100", provider: "Red Hat, Inc.", submission_id: "", driver_inbox: 0, inf: "oem0.inf", flight_ids: "", recovery_ids: "", is_active: 0, hwids: "pci\\ven_1af4&dev_1001&subsys_00021af4&rev_00,pci\\ven_1af4&dev_1042&subsys_11001af4&rev_01", sysfile: "viostor.sys", timestamp: 04-09-2019 21:20:03.437 }
 ```
+
+### Pipeline integration
+
+`frnsc_amcache::parser::AmCacheParserFactory` adapts `AmCacheReader` to forensic-rs's `ArtifactParserFactory` triage-pipeline trait, emitting one `ForensicData` per entry across all nine inventories, each carrying real provenance (`ProvenanceId`) minted from a source it registers itself. `AmCacheParserFactory` is self-sufficient and stateless: it discovers and opens `Amcache.hve` itself from the `FileSystem` inside `TriageSources` when the pipeline calls `open()`, registering its own source and reading the host/acquisition off the `ParseContext` — so construction takes no arguments and one `Arc<AmCacheParserFactory>` can be shared across every parallel worker:
+
+```rust
+use std::sync::Arc;
+use forensic_rs::prelude::*;
+use frnsc_amcache::parser::AmCacheParserFactory;
+
+let fs: Arc<dyn FileSystem> = Arc::new(ChRootFileSystem::new("./artifacts/C", Arc::new(StdVirtualFS::new())));
+
+let context = TriageContext::new("HOST", "default");
+let mut pipeline = TriagePipeline::builder()
+    .context(context)
+    .parser(Arc::new(AmCacheParserFactory::new()))
+    .sink(Box::new(my_sink))
+    .build()?;
+
+let sources = TriageSources::builder().vfs(fs).acquisition(Acquisition::ImageRead).build();
+pipeline.run(&sources)?;
+```
+
+Fields are namespaced `"amcache.<record>.<field>"` (e.g. `"amcache.application.program_id"`, `"amcache.shortcut.path"`), with a shared `"amcache.record_type"` discriminator and a shared `"amcache.timestamp"` key across all nine record types — so a single `TimelineSink`/`JsonlTimelineSink` works uniformly over this parser's whole output. See `examples/pipeline.rs` for a complete, runnable version wired against the fixture hive under `./artifacts`.
+
+### Bridge / virtual filesystem integration
+
+Every record struct in `frnsc_amcache::common` also implements `From<&T> for BridgeValue`, so `AmCacheReader` can back a forensic-rs `ProviderHook`: a hook can recognize `Amcache.hve` by content, expose its nine inventories as virtual children of that file, and page through records on demand — nothing is parsed until a caller actually asks for it, so a category with millions of entries costs nothing until it's browsed. `AmCacheReader`'s `*_count()` methods (e.g. `applications_count()`) support this by returning a subkey count without parsing any entries.
+
+See `examples/bridge_amcache.rs` for a complete `ProviderHook` implementation driven end-to-end through a `BridgeClient`, including listing categories, paging records, and reading a single record by index.
+
+### Development
+
+```bash
+cargo test                          # unit tests + the pipeline integration test, run against the fixture hive
+cargo run --example pipeline        # minimal triage-pipeline usage
+cargo run --example bridge_amcache  # ProviderHook / Bridge usage
+```
+
+Tests and examples read the fixture hive at `artifacts/C/Windows/AppCompat/Programs/Amcache.hve` (excluded from the published crate via `Cargo.toml`'s `exclude`). CI (`.github/workflows/rust.yml`) runs `cargo test --verbose` on Linux, Windows and macOS with the stable toolchain.

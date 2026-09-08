@@ -1,6 +1,8 @@
-use forensic_rs::{info, traits::registry::{auto_close_key, RegHiveKey, RegistryReader}, utils::time::Filetime};
+use std::collections::BTreeMap;
 
-use super::read_value_string_or_empty;
+use forensic_rs::prelude::*;
+
+use super::{read_value_string_or_empty, timestamp_to_bridge_value};
 
 #[derive(Clone, Debug, Default)]
 pub struct InventoryApplicationShortcut {
@@ -8,52 +10,57 @@ pub struct InventoryApplicationShortcut {
     pub target_path : String,
     pub aum_id : String,
     pub program_id : String,
-    pub timestamp : Filetime
+    pub timestamp : Option<ForensicTimestamp>
 }
 
-pub struct InventoryApplicationShortcutIter<'a, R : RegistryReader> {
-    pub(crate) pos : u32,
-    pub(crate) key : RegHiveKey,
-    pub(crate) reader : &'a R
-}
-
-impl<'a, R: RegistryReader> Iterator for InventoryApplicationShortcutIter<'a, R> {
-    type Item = InventoryApplicationShortcut;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.key == RegHiveKey::Hkey(0) {
-            return None
-        }
-        let pos = self.pos;
-        self.pos += 1;
-        let next_subkey = self.reader.key_at(self.key, pos).ok()?;
-        let key = self.reader.open_key(self.key, &next_subkey).ok()?;
-        match auto_close_key(self.reader, key, || {
-            let path : String = read_value_string_or_empty(self.reader, key, "ShortcutPath");
-            let target_path : String = read_value_string_or_empty(self.reader, key, "ShortcutTargetPath");
-            let aum_id: String = read_value_string_or_empty(self.reader, key, "ShortcutAumid");
-            let program_id : String = read_value_string_or_empty(self.reader, key, "ShortcutProgramId");
-            let key_info = self.reader.key_info(key)?;
-            Ok(InventoryApplicationShortcut {
-                path,
-                target_path,
-                aum_id,
-                program_id,
-                timestamp : key_info.last_write_time
-            })
-        }) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                info!("Error getting AmCache shortcut {}", e);
-                None
-            }
-        }
+impl From<&InventoryApplicationShortcut> for BridgeValue {
+    fn from(shortcut: &InventoryApplicationShortcut) -> Self {
+        let mut map = BTreeMap::new();
+        map.insert(Text::Borrowed("path"), BridgeValue::Text(Text::Owned(shortcut.path.clone())));
+        map.insert(Text::Borrowed("target_path"), BridgeValue::Text(Text::Owned(shortcut.target_path.clone())));
+        map.insert(Text::Borrowed("aum_id"), BridgeValue::Text(Text::Owned(shortcut.aum_id.clone())));
+        map.insert(Text::Borrowed("program_id"), BridgeValue::Text(Text::Owned(shortcut.program_id.clone())));
+        map.insert(Text::Borrowed("timestamp"), timestamp_to_bridge_value(shortcut.timestamp));
+        BridgeValue::Map(map)
     }
 }
 
-impl<'a, R: RegistryReader> Drop for InventoryApplicationShortcutIter<'a, R> {
-    fn drop(&mut self) {
-        self.reader.close_key(self.key);
-        self.key = RegHiveKey::Hkey(0);
+pub struct InventoryApplicationShortcutIter {
+    pub(crate) key : OwnedRegKey,
+    pub(crate) entries : std::vec::IntoIter<KeyEntry>,
+}
+
+impl InventoryApplicationShortcutIter {
+    fn build(&self, name: &str) -> ForensicResult<InventoryApplicationShortcut> {
+        let key = self.key.open_child(name)?;
+        let path : String = read_value_string_or_empty(&key, "ShortcutPath");
+        let target_path : String = read_value_string_or_empty(&key, "ShortcutTargetPath");
+        let aum_id: String = read_value_string_or_empty(&key, "ShortcutAumid");
+        let program_id : String = read_value_string_or_empty(&key, "ShortcutProgramId");
+        let key_info = key.info()?;
+        Ok(InventoryApplicationShortcut {
+            path,
+            target_path,
+            aum_id,
+            program_id,
+            timestamp : key_info.last_write_time
+        })
+    }
+}
+
+impl Iterator for InventoryApplicationShortcutIter {
+    type Item = InventoryApplicationShortcut;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let entry = self.entries.next()?;
+            match self.build(&entry.name) {
+                Ok(v) => return Some(v),
+                Err(e) => {
+                    info!("Error parsing AmCache InventoryApplicationShortcut entry {}: {}", entry.name, e);
+                    continue;
+                }
+            }
+        }
     }
 }
