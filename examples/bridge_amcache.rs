@@ -263,7 +263,8 @@ fn main() -> ForensicResult<()> {
     let fs: Arc<dyn FileSystem> = Arc::new(in_memory_fs);
 
     let mut reader = HiveRegistryReader::new();
-    let hive_file = open_hive_with_logs(&fs, FPath::new(r"Windows\AppCompat\Programs"), "Amcache.hve")
+    let mut findings = Vec::new();
+    let hive_file = open_hive_with_logs(&fs, FPath::new(r"Windows\AppCompat\Programs"), "Amcache.hve", &mut findings)
         .expect("failed to open Amcache.hve from the in-memory filesystem");
     reader.add_other("Amcache", hive_file);
     let root = reader.other_hive_root("Amcache").expect("Amcache hive was just mounted above");

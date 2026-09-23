@@ -143,7 +143,8 @@ mod tests {
     fn open_driver_binary_key() -> OwnedRegKey {
         let fs: Arc<dyn FileSystem> = Arc::new(ChRootFileSystem::new("./artifacts/C", Arc::new(StdVirtualFS::new())));
         let mut reader = HiveRegistryReader::new();
-        let hive_file = open_hive_with_logs(&fs, FPath::new(r"C:\Windows\AppCompat\Programs"), "Amcache.hve").unwrap();
+        let mut findings = Vec::new();
+        let hive_file = open_hive_with_logs(&fs, FPath::new(r"C:\Windows\AppCompat\Programs"), "Amcache.hve", &mut findings).unwrap();
         reader.add_other("Amcache", hive_file);
         let root = reader.other_hive_root("Amcache").unwrap();
         let registry: Arc<dyn Registry> = Arc::new(reader);

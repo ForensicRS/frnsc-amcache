@@ -63,7 +63,8 @@ impl AmCacheParserFactory {
         let fs = ctx
             .vfs()
             .ok_or_else(|| ForensicError::missing_data("FileSystem source required", CompactString::const_new("AmCacheParserFactory")))?;
-        let hive_file = open_hive_with_logs(fs, FPath::new(AMCACHE_HIVE_DIR), AMCACHE_HIVE_NAME)
+        let mut findings = Vec::new();
+        let hive_file = open_hive_with_logs(fs, FPath::new(AMCACHE_HIVE_DIR), AMCACHE_HIVE_NAME, &mut findings)
             .ok_or_else(|| ForensicError::missing_data("Amcache.hve not found", CompactString::const_new("AmCacheParserFactory")))?;
 
         let mut hive_reader = HiveRegistryReader::new();
